@@ -1,0 +1,47 @@
+---
+
+- hosts: webservers
+  user: ubuntu
+  sudo: True
+
+  vars:
+    app_name: hello_flask
+    repo_url: https://github.com/mattupstate/ansible-tutorial.git
+    repo_remote: origin
+    repo_version: master
+    webapps_dir: /srv/webapps
+    wsgi_file: wsgi.py
+    wsgi_callable: app
+
+  tasks:
+    - name: ensure log directory
+      action: file dest=${webapps_dir}/${app_name}/log state=directory
+
+    - name: deploy code from repository
+      action: git repo=$repo_url dest=${webapps_dir}/${app_name}/src remote=$repo_remote version=$repo_version
+
+    - name: install dependencies into virtualenv
+      action: pip requirements=${webapps_dir}/${app_name}/src/requirements.txt virtualenv=${webapps_dir}/${app_name}/venv state=present
+
+    - name: create supervisor program config
+      action: template src=templates/supervisor.ini dest=/etc/supervisor/${app_name}.ini
+      notify:
+        - restart app
+
+    - name: create nginx site config
+      action: template src=templates/nginx_site.conf dest=/etc/nginx/sites-available/${app_name}.conf
+      notify:
+        - restart nginx
+
+    - name: link nginx config
+      action: file src=/etc/nginx/sites-available/${app_name}.conf dest=/etc/nginx/sites-enabled/${app_name}.conf state=link
+
+    - name: start app
+      action: supervisorctl name=${app_name} state=started
+
+  handlers:
+    - name: restart app
+      action: supervisorctl name=${app_name} state=restarted
+
+    - name: restart nginx
+      action: service name=nginx state=restarted
